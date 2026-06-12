@@ -32,13 +32,13 @@
 | `tests/test_delegate.bats` | R2 | bats 단위 테스트 |
 | `.gitignore` | — | .router/ 제외 |
 
-**수용 기준 (Phase 1)**:
-- [ ] `config/routing-rules.yaml` 없을 때 delegate.sh가 0이 아닌 종료 코드 반환
-- [ ] mock-cline으로 위임 1건 end-to-end: 결과 파일이 `.router/results/<task-id>.md`에 생성됨
-- [ ] 타임아웃(1초 이내) mock으로 타임아웃 처리 경로 확인
-- [ ] cline 미설치 시 check-env.sh가 명확한 안내 출력
-- [ ] bats 테스트 전체 통과
-- [ ] shellcheck 경고 없음
+**수용 기준 (Phase 1)** — 2026-06-12 전체 충족:
+- [x] `config/routing-rules.yaml` 없을 때 delegate.sh가 0이 아닌 종료 코드 반환 (exit 3)
+- [x] mock-cline으로 위임 1건 end-to-end: 결과 파일이 `.router/results/<task-id>.md`에 생성됨
+- [x] 타임아웃(1초 이내) mock으로 타임아웃 처리 경로 확인 (exit 7, error:timeout 로깅)
+- [x] cline 미설치 시 check-env.sh가 명확한 안내 출력
+- [x] bats 테스트 전체 통과 (14/14)
+- [x] shellcheck 경고 없음
 
 ### Phase 2 — cline 연동 (다음)
 

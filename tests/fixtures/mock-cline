@@ -1,0 +1,44 @@
+#!/usr/bin/env bash
+# mock-cline — cline CLI를 흉내내는 테스트용 실행 파일
+#
+# MOCK_MODE:
+#   ok           (기본) stdin 소비 후 고정 응답 출력, exit 0
+#   slow         10초 sleep (타임아웃 테스트용)
+#   fail         exit 1
+#   fail-then-ok 첫 호출 exit 1, 이후 ok (재시도 테스트용, MOCK_STATE_FILE 필요)
+set -euo pipefail
+
+emit_ok() {
+  cat > /dev/null   # stdin(프롬프트) 소비
+  # shellcheck disable=SC2016  # 백틱은 마크다운 코드 펜스 (확장 의도 없음)
+  printf '```python\ndef add(a, b):\n    return a + b\n```\n'
+}
+
+case "${MOCK_MODE:-ok}" in
+  ok)
+    emit_ok
+    ;;
+  slow)
+    cat > /dev/null
+    sleep 10
+    ;;
+  fail)
+    cat > /dev/null
+    echo "mock-cline: simulated failure" >&2
+    exit 1
+    ;;
+  fail-then-ok)
+    if [[ -f "${MOCK_STATE_FILE:?MOCK_STATE_FILE required}" ]]; then
+      emit_ok
+    else
+      cat > /dev/null
+      touch "$MOCK_STATE_FILE"
+      echo "mock-cline: simulated first-attempt failure" >&2
+      exit 1
+    fi
+    ;;
+  *)
+    echo "mock-cline: unknown MOCK_MODE=${MOCK_MODE}" >&2
+    exit 99
+    ;;
+esac
