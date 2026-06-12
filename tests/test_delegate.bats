@@ -5,7 +5,7 @@ setup() {
   TEST_TMP=$(mktemp -d)
   export ROUTER_DIR="$TEST_TMP/.router"
   export RULES_FILE="$TEST_TMP/rules.yaml"
-  export CLINE_BIN="$BATS_TEST_DIRNAME/fixtures/mock-cline"
+  export CODEX_BIN="$BATS_TEST_DIRNAME/fixtures/mock-codex"
   export MOCK_MODE=ok
   unset MOCK_STATE_FILE || true
 
@@ -87,8 +87,8 @@ EOF
   [ ! -f "$ROUTER_DIR/results/t-slow.md" ]
 }
 
-@test "cline 미설치: 명확한 안내와 비제로 종료 (exit 5)" {
-  export CLINE_BIN="$TEST_TMP/no-such-cline"
+@test "codex 미설치: 명확한 안내와 비제로 종료 (exit 5)" {
+  export CODEX_BIN="$TEST_TMP/no-such-codex"
   run "$DELEGATE" boilerplate t1 "$CTX" "generate add()"
   [ "$status" -eq 5 ]
   [[ "$output" == *"not found"* ]]

@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# delegate.sh — 핸드오프 프롬프트 조립 + Cline CLI 헤드리스 실행 래퍼 (R2)
+# delegate.sh — 핸드오프 프롬프트 조립 + Codex CLI 헤드리스 실행 래퍼 (R2)
 #
 # 사용법:
 #   delegate.sh <task-type> <task-id> <context-file> "<instruction>"
@@ -8,7 +8,7 @@
 #   RULES_FILE      routing-rules.yaml 경로 (기본: <repo>/config/routing-rules.yaml)
 #   TEMPLATES_DIR   핸드오프 템플릿 디렉토리 (기본: <repo>/templates)
 #   ROUTER_DIR      런타임 산출물 디렉토리 (기본: $PWD/.router)
-#   CLINE_BIN       백엔드 실행 파일 (테스트에서 mock-cline 주입 지점)
+#   CODEX_BIN       백엔드 실행 파일 (테스트에서 mock-codex 주입 지점)
 #   HANDOFF_CONSTRAINTS / HANDOFF_OUTPUT_FORMAT  템플릿 추가 치환 값
 #
 # 종료 코드:
@@ -128,12 +128,12 @@ awk -v tid="$TASK_ID" \
 ' "$TPL_FILE" > "$PROMPT_FILE"
 
 # --- 백엔드 실행 (P2에서 codex 어댑터로 교체할 격리 지점) ----------------------
-BACKEND_BIN=${CLINE_BIN:-$(rule '.cline.command // "cline"')}
-mapfile -t HEADLESS_ARGS < <(jq -r '(.cline.headless_args // [])[]' <<<"$RULES_JSON")
+BACKEND_BIN=${CODEX_BIN:-$(rule '.codex.command // "codex"')}
+mapfile -t HEADLESS_ARGS < <(jq -r '(.codex.headless_args // [])[]' <<<"$RULES_JSON")
 
 if ! command -v "$BACKEND_BIN" >/dev/null 2>&1; then
-  err "cline CLI not found: $BACKEND_BIN"
-  err "install cline or set CLINE_BIN. run scripts/check-env.sh for diagnosis."
+  err "codex CLI not found: $BACKEND_BIN"
+  err "install codex or set CODEX_BIN. run scripts/check-env.sh for diagnosis."
   exit 5
 fi
 
