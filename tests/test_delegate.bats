@@ -160,3 +160,77 @@ EOF
   record=$(tail -1 "$ROUTER_DIR/log.jsonl")
   [ "$(jq -r .verify_result <<<"$record")" = "fail:tests" ]
 }
+
+# --- doubt-driven 반증 (adversarial 검증) ------------------------------------
+
+@test "adversarial: 반증 PASS → verify pass (tier=adversarial)" {
+  VERIFY="$BATS_TEST_DIRNAME/../scripts/verify.sh"
+  export REVIEWER_BIN="$BATS_TEST_DIRNAME/fixtures/mock-reviewer"
+  export MOCK_REVIEW=pass
+  run "$DELEGATE" test-stub t-adv-ok "$CTX" "generate test stub"
+  [ "$status" -eq 0 ]
+  run "$VERIFY" t-adv-ok
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"tier=adversarial"* ]]
+  record=$(tail -1 "$ROUTER_DIR/log.jsonl")
+  [ "$(jq -r .verify_result <<<"$record")" = "pass" ]
+  [ "$(jq -r .tier <<<"$record")" = "adversarial" ]
+}
+
+@test "adversarial: 반증 FAIL → fail:doubt + 비제로 종료" {
+  VERIFY="$BATS_TEST_DIRNAME/../scripts/verify.sh"
+  export REVIEWER_BIN="$BATS_TEST_DIRNAME/fixtures/mock-reviewer"
+  export MOCK_REVIEW=fail
+  run "$DELEGATE" test-stub t-adv-fail "$CTX" "generate test stub"
+  [ "$status" -eq 0 ]
+  run "$VERIFY" t-adv-fail
+  [ "$status" -eq 1 ]
+  record=$(tail -1 "$ROUTER_DIR/log.jsonl")
+  [ "$(jq -r .verify_result <<<"$record")" = "fail:doubt" ]
+}
+
+@test "adversarial: VERDICT 라인 없으면 안전 기본값 fail:doubt" {
+  VERIFY="$BATS_TEST_DIRNAME/../scripts/verify.sh"
+  export REVIEWER_BIN="$BATS_TEST_DIRNAME/fixtures/mock-reviewer"
+  export MOCK_REVIEW=noverdict
+  run "$DELEGATE" test-stub t-adv-nov "$CTX" "generate test stub"
+  [ "$status" -eq 0 ]
+  run "$VERIFY" t-adv-nov
+  [ "$status" -eq 1 ]
+  record=$(tail -1 "$ROUTER_DIR/log.jsonl")
+  [ "$(jq -r .verify_result <<<"$record")" = "fail:doubt" ]
+}
+
+@test "mechanical 등급은 reviewer 미호출 (불필요한 비용 없음)" {
+  VERIFY="$BATS_TEST_DIRNAME/../scripts/verify.sh"
+  # reviewer를 존재하지 않는 경로로 설정해도 boilerplate(mechanical)는 통과해야 함
+  export REVIEWER_BIN="$TEST_TMP/no-such-reviewer"
+  run "$DELEGATE" boilerplate t-mech "$CTX" "generate add()"
+  [ "$status" -eq 0 ]
+  run "$VERIFY" t-mech
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"tier=mechanical"* ]]
+}
+
+@test "adversarial: reviewer 미설치 시 fail:no-reviewer" {
+  VERIFY="$BATS_TEST_DIRNAME/../scripts/verify.sh"
+  export REVIEWER_BIN="$TEST_TMP/no-such-reviewer"
+  run "$DELEGATE" test-stub t-adv-nobin "$CTX" "generate test stub"
+  [ "$status" -eq 0 ]
+  run "$VERIFY" t-adv-nobin
+  [ "$status" -eq 1 ]
+  [[ "$output" == *"not found"* ]]
+  record=$(tail -1 "$ROUTER_DIR/log.jsonl")
+  [ "$(jq -r .verify_result <<<"$record")" = "fail:no-reviewer" ]
+}
+
+@test "VERIFY_TIER 환경변수로 등급 강제 (adversarial→mechanical)" {
+  VERIFY="$BATS_TEST_DIRNAME/../scripts/verify.sh"
+  export REVIEWER_BIN="$TEST_TMP/no-such-reviewer"
+  export VERIFY_TIER=mechanical
+  run "$DELEGATE" test-stub t-force "$CTX" "generate test stub"
+  [ "$status" -eq 0 ]
+  run "$VERIFY" t-force
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"tier=mechanical"* ]]
+}

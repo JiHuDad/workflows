@@ -3,8 +3,10 @@
 # 이 파일이 없으면 위임은 전면 비활성화된다 (안전 기본값).
 # 파싱 실패 시에도 위임은 중단된다.
 
+# 비대칭 구조: 생성은 싼 모델(codex), 검증은 최고 모델(claude).
 backend: codex
 
+# --- 생성 백엔드 (싼 모델) ---
 codex:
   command: codex
   # headless_args: 설치 후 `codex --help`로 확인하여 맞는 것을 사용하세요.
@@ -13,6 +15,18 @@ codex:
   #   ["--no-interactive"]   # 대화형 입력 비활성화
   #   []                     # 플래그 없이 stdin만으로 동작하는 경우
   headless_args: []
+
+# --- 검증 백엔드 (최고 모델) ---
+# doubt-driven 반증을 수행한다. 비싼 토큰을 오류 검출(고레버리지)에 투입.
+reviewer:
+  command: claude
+  # headless_args: 설치 후 `claude --help`로 확인.
+  # 후보:
+  #   ["-p"]          # print(비대화형) 모드 — 가장 일반적
+  #   ["--print"]
+  headless_args: ["-p"]
+  # 반증 호출 타임아웃(초). 미지정 시 limits.timeout_sec 사용.
+  timeout_sec: 120
 
 delegate_if:
   task_type:
@@ -32,6 +46,21 @@ never_delegate:
   - security-sensitive      # 인증/암호화/입력검증 코드
   - architecture-change
   - cross-module-refactor
+
+# 검증 등급: task-type별 검증 강도. 위험·판단이 개입하는 작업만 비싼 반증을 돌린다.
+#   mechanical  — 기계적 검사만 (파일 존재, 길이, test-command)
+#   adversarial — 위 검사 + 최고 LLM(reviewer)의 doubt-driven 반증
+# 등급 결정 순서: VERIFY_TIER 환경변수 > verification_tier[type] > 기본 mechanical
+verification_tier:
+  boilerplate:      mechanical
+  docstring:        mechanical
+  format-transform: mechanical
+  test-stub:        adversarial
+  classification:   adversarial
+
+# 반증 실패(fail:doubt) 시 처리: claude-direct = Claude Code가 직접 재작업
+escalation:
+  on_fail: claude-direct
 
 limits:
   timeout_sec: 180

@@ -207,6 +207,11 @@ mkdir -p "$ROUTER_DIR/results"
 RESULT_FILE="$ROUTER_DIR/results/$TASK_ID.md"
 cp "$RAW_OUT" "$RESULT_FILE"
 
+# 조립한 프롬프트를 보존한다 → verify.sh의 doubt-driven 반증이 원본 의뢰를
+# 컨텍스트로 사용한다 (검증 정확도↑, 감사 추적).
+mkdir -p "$ROUTER_DIR/prompts"
+cp "$PROMPT_FILE" "$ROUTER_DIR/prompts/$TASK_ID.md" 2>/dev/null || true
+
 SAVED_TOKENS=$(( RESULT_CHARS * 3 / 4 ))
 log_record "pending" "$SAVED_TOKENS"
 

@@ -90,17 +90,37 @@ scripts/delegate.sh boilerplate task-001 /tmp/ctx.md \
    cat "$RESULT_FILE"   # 코드 블록 추출
    ```
 
-3. **검수 실행**
+3. **검수 실행 (생성=싼 모델, 검증=최고 모델)**
+
+   위임 결과는 **무조건 검수**한다. 검증 등급은 `routing-rules.yaml`의
+   `verification_tier`가 task-type별로 결정한다:
+   - `mechanical` (boilerplate, docstring, format-transform): 파일·길이·테스트만
+   - `adversarial` (test-stub, classification): **최고 LLM(claude)이 doubt-driven
+     반증** 수행 — "이 산출물이 틀렸다고 가정하고 결함을 찾아라"
 
    ```bash
-   # 기본 검수 (결과 파일 존재 확인)
+   # 검수 (등급은 자동 결정. adversarial이면 reviewer LLM 호출)
    scripts/verify.sh t-001
 
-   # 테스트 명령 포함 검수
+   # 테스트 명령 포함
    scripts/verify.sh t-001 "pytest tests/test_user.py -q"
    ```
 
-4. **통계 확인**
+   **검수 결과 분기:**
+   | verify.sh 종료 | 의미 | 처리 |
+   |----------------|------|------|
+   | `0` (pass) | 기계적 통과 + (해당 시) 반증 PASS | 결과 채택 |
+   | `1` (fail:doubt) | 최고 LLM이 결함 발견 (VERDICT: FAIL) | **escalation** |
+   | `1` (fail:tests/no-result) | 기계적 실패 | 직접 처리 |
+
+4. **escalation — 반증 실패 시 직접 재작업**
+
+   `verify.sh`가 `fail:doubt`로 실패하면 위임 결과를 **버리고**, stderr에 출력된
+   결함 근거를 참고하여 **Claude Code가 직접** 작업을 다시 수행한다
+   (`routing-rules.yaml`의 `escalation.on_fail: claude-direct`). 위임은 낙관적
+   시도이고, 반증이 안전망이다.
+
+5. **통계 확인**
 
    ```bash
    scripts/stats.sh

@@ -59,6 +59,28 @@
 - R7 verify.sh 테스트 자동 탐지
 - R8 `/router:stats`, `/router:dry-run` 커맨드
 
+### Phase 5 — 검증 루프 (doubt-driven verification) ★ 신규
+
+비대칭 구조: **생성=Codex(싼 모델), 검증=Claude(최고 모델)**. 비용 라우팅의
+품질 위험을 사람 리뷰가 아니라 최고 LLM의 반증으로 차단. (design.md §6)
+
+| 산출물 | 내용 |
+|--------|------|
+| `routing-rules.yaml` | `reviewer`(claude) 백엔드, `verification_tier`, `escalation` 추가 |
+| `verify.sh` | adversarial 모드: task_type 역참조 → 반증 의뢰 → VERDICT 파싱 |
+| `templates/handoff-review.md` | doubt-driven 반증 프롬프트 |
+| `delegate.sh` | 조립 프롬프트를 `.router/prompts/<id>.md`에 저장 (검증 컨텍스트) |
+| `tests/fixtures/mock-reviewer` | VERDICT PASS/FAIL mock |
+| `SKILL.md` | 검증 단계·escalation 분기 명문화 |
+
+**수용 기준 (Phase 5)**:
+- [ ] adversarial 등급 task-type 위임 시 reviewer가 호출되고 VERDICT로 pass/fail 판정
+- [ ] VERDICT: FAIL → `fail:doubt` 로깅 + 비제로 종료 → escalation 신호
+- [ ] VERDICT 라인 없으면 안전 기본값 `fail:doubt`
+- [ ] mechanical 등급은 reviewer 미호출 (불필요한 비용 없음)
+- [ ] reviewer 미설치 시 명확한 안내
+- [ ] bats 전체 통과, shellcheck 무경고
+
 ---
 
 ## 열린 질문 처리 계획

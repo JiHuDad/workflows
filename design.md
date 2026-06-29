@@ -22,11 +22,19 @@ scripts/delegate.sh <task-type> <task-id> <context-file> "<instruction>"
    └─ f. 로그 기록: .router/log.jsonl (1줄 JSON append)
    ▼
 scripts/verify.sh <task-id> [test-command]
-   │  결과 파일 존재·비어있지 않음·max_output_lines 이하 확인
-   │  test-command 지정 시 실행, 결과를 log.jsonl에 verify_result로 기록
+   │  1. 기계적 검사: 결과 파일 존재·비어있지 않음·max_output_lines 이하
+   │  2. test-command 지정 시 실행
+   │  3. 검증 등급(verification_tier)이 adversarial이면
+   │     → 최고 LLM(reviewer=claude)에 doubt-driven 반증 의뢰
+   │     → VERDICT: PASS/FAIL 파싱
+   │  결과를 log.jsonl에 verify_result로 기록
    ▼
-Claude Code가 결과 채택 / 1회 재위임 / 직접 수행 결정
+Claude Code가 결과 채택 / escalation(직접 재작업) 결정
 ```
+
+> **핵심 비대칭(asymmetry)**: 생성은 싼 모델(Codex)에, 검증은 최고 모델(Claude)에 맡긴다.
+> 비싼 토큰을 *저레버리지 생성*이 아니라 *고레버리지 반증*에 투입하여
+> 비용을 절감하면서도 품질 하락을 차단한다. (§6 참조)
 
 ## 2. 컴포넌트 설계
 
@@ -146,6 +154,75 @@ jq 단일 패스 집계:
 - 모든 스크립트 `set -euo pipefail` + `trap`으로 임시파일/자식 프로세스 정리
 - 위임 실패는 **항상 0이 아닌 종료 코드 + stderr 한 줄 사유** → Claude Code가 fallback 판단 가능
 - log.jsonl 기록 실패는 위임 성공 여부에 영향 주지 않음 (best-effort, stderr 경고만)
+
+## 6. 검증 루프 아키텍처 (doubt-driven verification)
+
+비용 라우팅의 위험은 "싸게 위임하면 품질이 떨어진다"이다. 해법은 사람 리뷰가
+아니라 **싼 생성 + 비싼 검증**의 비대칭 구조다. 사람이 매번 리뷰하면 라우팅의
+의미가 사라지지만, 최고 LLM이 산출물을 **반증(refute)**하면 비용을 유지한 채
+품질을 지킬 수 있다.
+
+### 6.1 역할 분리
+
+| 역할 | 백엔드 | 비용 | 근거 |
+|------|--------|------|------|
+| 생성 (generate) | `codex` | 싼 모델 | 기계적 작업은 저레버리지 |
+| 검증 (review)   | `reviewer.command` = `claude` | 최고 모델 | 오류를 잡는 곳이 고레버리지 |
+
+생성 백엔드와 검증 백엔드는 `routing-rules.yaml`에서 분리 설정한다.
+검증 실행 파일은 `REVIEWER_BIN` 환경변수로 오버라이드(테스트에서 mock 주입).
+
+### 6.2 검증 등급 (verification_tier)
+
+task-type별로 검증 강도를 차등한다. 위험·판단이 개입하는 작업만 비싼 반증을
+돌려 검증 비용 자체도 최적화한다.
+
+```yaml
+verification_tier:
+  boilerplate:      mechanical    # 저위험 → 테스트/구조 확인만
+  docstring:        mechanical
+  format-transform: mechanical
+  test-stub:        adversarial   # 누락·오류 가능 → 반증 필수
+  classification:   adversarial   # 판단 개입 → 반증 필수
+```
+
+- `mechanical`: 기존 검사(파일 존재, max_output_lines, test-command)만.
+- `adversarial`: 위 검사 통과 후, 최고 LLM에 doubt-driven 반증을 추가로 의뢰.
+
+등급 결정 순서: `VERIFY_TIER` 환경변수 > `verification_tier[task_type]` > 기본 `mechanical`.
+`verify.sh`는 task_type을 **log.jsonl의 마지막 route 레코드에서 역참조**한다
+(별도 인자 불필요, append-only 로그 활용).
+
+### 6.3 doubt-driven 반증 절차
+
+```
+verify.sh (adversarial)
+   ├─ a. .router/prompts/<task-id>.md  (원본 의뢰 = delegate.sh가 저장)
+   ├─ b. .router/results/<task-id>.md  (산출물)
+   ├─ c. templates/handoff-review.md 로 반증 프롬프트 조립
+   │      "이 산출물이 틀렸다고 가정하고 결함을 찾아라"
+   ├─ d. reviewer(claude) 헤드리스 실행 (timeout 래핑)
+   └─ e. 마지막 'VERDICT: PASS|FAIL' 라인 파싱
+          PASS → verify_result=pass
+          FAIL → verify_result=fail:doubt  (+ escalation 신호)
+```
+
+**VERDICT 계약**: 리뷰어는 자유 서술 후 **정확히 한 줄** `VERDICT: PASS` 또는
+`VERDICT: FAIL`로 끝낸다. 라인이 없으면 안전 기본값으로 `fail:doubt` 처리한다
+(검증 불능을 통과로 오인하지 않음).
+
+### 6.4 escalation
+
+`fail:doubt`이면 위임 결과를 채택하지 않는다. `escalation.on_fail: claude-direct`
+규칙에 따라 Claude Code가 직접 재작업한다. 즉 위임은 "낙관적 시도"이고, 반증이
+안전망이다. SKILL.md가 이 분기를 오케스트레이션한다.
+
+### 6.5 검증 비용 계상
+
+반증도 토큰을 쓰므로 `stats.sh`가 순절감을 정직하게 보고해야 한다. verify 레코드에
+검증 모델·결과를 남겨, 위임 절감분에서 검증 비용을 차감한 값이 실제 이득임을
+측정할 수 있게 한다. (반증은 오케스트레이터가 직접 생성하는 것보다, 사람 리뷰보다
+저렴하다는 가정.)
 
 ## 5. Phase 1 구현 순서
 

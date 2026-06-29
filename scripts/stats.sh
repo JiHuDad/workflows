@@ -27,11 +27,15 @@ jq -rs '
   | ($routes | map(select(.route == "delegated"
         and ($vlast[.task_id] // .verify_result) == "pass")
       | .claude_tokens_saved_est) | add // 0) as $saved
+  | ($verifies | map(select(.tier == "adversarial")) | length) as $adv
+  | ($verifies | map(select(.tier == "adversarial"
+        and .verify_result == "fail:doubt")) | length) as $advfail
   | "== llm-task-router stats ==",
     "routing decisions : \($total) (delegated \($delegated), direct \($direct), fallback \($fallback))",
     "delegation rate   : \(if $total > 0 then ($delegated * 100 / $total | floor) else 0 end)%",
     "verify pass rate  : \(if $delegated > 0 then ($passed * 100 / $delegated | floor) else 0 end)% (\($passed)/\($delegated))",
     "est. tokens saved : \($saved) (verified-pass tasks only; est = chars/4, see README)",
+    "adversarial review: \($adv)건 실행, 반증 차단 \($advfail)건 (최고 LLM이 품질 미달을 escalation 전환)",
     "",
     "-- by task_type (delegated) --",
     ($routes | map(select(.route == "delegated")) | group_by(.type) | map(

@@ -57,14 +57,22 @@ else
   note "또는 CODEX_BIN 환경변수에 절대 경로를 지정하세요."
 fi
 
-# --- Claude Code 확인 --------------------------------------------------------
-if command -v claude >/dev/null 2>&1; then
-  ok "claude (Claude Code) found: $(command -v claude)"
-  CL_VERSION=$(claude --version 2>/dev/null | head -1 || true)
-  [[ -n "$CL_VERSION" ]] && note "version: $CL_VERSION"
+# --- reviewer 백엔드 (최고 모델, doubt-driven 반증용) -------------------------
+REVIEWER_BIN=${REVIEWER_BIN:-claude}
+if [[ -z "${REVIEWER_BIN:+set}" || "$REVIEWER_BIN" == "claude" ]] \
+   && [[ -f "$RULES_FILE" ]] && command -v yq >/dev/null 2>&1; then
+  REVIEWER_BIN=$(yaml_to_json "$RULES_FILE" 2>/dev/null \
+    | jq -r '.reviewer.command // "claude"' 2>/dev/null || echo claude)
+fi
+
+if command -v "$REVIEWER_BIN" >/dev/null 2>&1; then
+  ok "reviewer (검증 백엔드) found: $(command -v "$REVIEWER_BIN")"
+  RV_VERSION=$("$REVIEWER_BIN" --version 2>/dev/null | head -1 || true)
+  [[ -n "$RV_VERSION" ]] && note "version: $RV_VERSION"
 else
-  note "claude (Claude Code) not found — SKILL.md 자동 라우팅 불가"
+  fail "reviewer LLM not found: $REVIEWER_BIN — adversarial 검증 불가"
   note "install: npm install -g @anthropic-ai/claude-code"
+  note "또는 REVIEWER_BIN 환경변수에 절대 경로를 지정하세요."
 fi
 
 # --- 규칙 파일 ---------------------------------------------------------------
@@ -72,10 +80,13 @@ if [[ -f "$RULES_FILE" ]]; then
   if command -v yq >/dev/null 2>&1 && command -v jq >/dev/null 2>&1 \
      && yaml_to_json "$RULES_FILE" 2>/dev/null | jq -e 'type == "object"' >/dev/null 2>&1; then
     ok "routing rules parse OK: $RULES_FILE"
-    HEADLESS=$(yaml_to_json "$RULES_FILE" 2>/dev/null \
-      | jq -r '(.codex.headless_args // []) | join(" ")' 2>/dev/null || echo "(none)")
-    note "codex.headless_args: [${HEADLESS}]"
-    note "headless_args가 비어 있으면 routing-rules.yaml에서 설정하세요."
+    RJSON=$(yaml_to_json "$RULES_FILE" 2>/dev/null || echo '{}')
+    HEADLESS=$(jq -r '(.codex.headless_args // []) | join(" ")' <<<"$RJSON" 2>/dev/null || echo "")
+    RV_HEADLESS=$(jq -r '(.reviewer.headless_args // []) | join(" ")' <<<"$RJSON" 2>/dev/null || echo "")
+    ADV=$(jq -r '[.verification_tier // {} | to_entries[] | select(.value=="adversarial") | .key] | join(", ")' <<<"$RJSON" 2>/dev/null || echo "")
+    note "codex.headless_args: [${HEADLESS}]   reviewer.headless_args: [${RV_HEADLESS}]"
+    note "adversarial 검증 대상 task-type: [${ADV}]"
+    note "headless_args가 비어 있으면 설치 후 routing-rules.yaml에서 설정하세요."
   else
     fail "routing rules exist but fail to parse: $RULES_FILE"
   fi
